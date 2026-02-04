@@ -268,6 +268,19 @@ def cmd_share(args):
             if args.tags:
                 tags = [t.strip() for t in args.tags.split(',') if t.strip()]
             
+            # Try to load identity for creator fields
+            creator_agent_id = None
+            creator_public_key = None
+            try:
+                from .identity import IdentityManager
+                identity_mgr = IdentityManager()
+                identity = identity_mgr.load_identity()
+                creator_agent_id = identity.agent_id
+                creator_public_key = identity_mgr.get_public_key()
+                logger.info(f"Loaded identity: {creator_agent_id}")
+            except Exception as e:
+                logger.debug(f"No identity available: {e}")
+            
             shard = MemoryShard(
                 file_path=str(file_path),
                 embedding_model=args.model or "nomic-embed-text-v1",
@@ -275,6 +288,8 @@ def cmd_share(args):
                 entry_count=0,
                 tags=tags,
                 display_name=args.name or file_path.name,
+                creator_agent_id=creator_agent_id,
+                creator_public_key=creator_public_key,
             )
             
             # Compute hash

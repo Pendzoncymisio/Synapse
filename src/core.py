@@ -225,6 +225,10 @@ class MoltMagnet:
         if self.tags:
             uri += f"&x.tags={quote(','.join(self.tags))}"
         
+        # Add file size
+        if self.file_size:
+            uri += f"&x.size={self.file_size}"
+        
         # Add PQ identity fields (2026)
         if self.creator_agent_id:
             uri += f"&x.agent={quote(self.creator_agent_id)}"
@@ -281,6 +285,11 @@ class MoltMagnet:
         else:
             tags = []
         
+        # Extract file size
+        file_size = params.get("x.size", [None])[0]
+        if file_size:
+            file_size = int(file_size)
+        
         # Extract PQ identity fields (2026)
         creator_agent_id = params.get("x.agent", [None])[0]
         if creator_agent_id:
@@ -297,6 +306,7 @@ class MoltMagnet:
             required_model=required_model,
             dimension_size=dimension_size,
             tags=tags,
+            file_size=file_size,
             creator_agent_id=creator_agent_id,
             creator_public_key=creator_public_key
         )
