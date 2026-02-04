@@ -120,31 +120,52 @@ def cmd_generate_magnet(args):
 def cmd_search(args):
     """Search the P2P network for memory shards."""
     try:
-        # In a real implementation, this would query trackers and DHT
-        # For now, return a simulated response
+        import requests
+        from .embeddings import create_embedder
         
-        results = [
-            {
-                "display_name": f"Sample Result {i+1} for '{args.query}'",
-                "info_hash": f"{'a' * 40}",  # Placeholder hash
-                "tags": ["sample", args.query.lower().replace(" ", "-")],
-                "model": args.model or "claw-v3-small",
-                "dimension_size": 1536,
-                "file_size": 10485760,  # 10MB
-                "seeders": 5,
-                "leechers": 2,
-            }
-            for i in range(min(args.limit, 3))  # Limit to 3 for simulation
-        ]
+        # Get tracker URL
+        tracker_url = args.tracker if hasattr(args, 'tracker') and args.tracker else "http://hivebraintracker.com:8080"
+        
+        # Generate embedding from query text
+        logger.info(f"Generating embedding for query: {args.query}")
+        embedder = create_embedder(use_onnx=False)  # nomic-bert
+        query_embedding = embedder.encode(args.query).tolist()
+        
+        # Send embedding to tracker
+        logger.info(f"Searching tracker at {tracker_url}")
+        response = requests.post(
+            f"{tracker_url}/api/search/embedding",
+            json={
+                "embedding": query_embedding,
+                "limit": args.limit
+            },
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            output_error(f"Tracker error: {response.text}")
+        
+        data = response.json()
+        
+        if data.get("status") != "success":
+            output_error(f"Search failed: {data.get('error', 'Unknown error')}")
+        
+        results = data.get("results", [])
         
         output_json({
             "status": "success",
             "query": args.query,
             "results": results,
             "count": len(results),
-            "message": f"Found {len(results)} results (simulated)"
+            "message": f"Found {len(results)} results from tracker"
         })
     
+    except ImportError as e:
+        logger.exception("Missing dependency")
+        output_error(f"Missing required module: {e}. Install with: uv pip install requests sentence-transformers")
+    except requests.exceptions.RequestException as e:
+        logger.exception("Failed to connect to tracker")
+        output_error(f"Tracker connection failed: {e}")
     except Exception as e:
         logger.exception("Failed to search")
         output_error(str(e))

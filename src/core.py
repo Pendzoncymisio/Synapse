@@ -331,10 +331,9 @@ class MoltMagnet:
 
 # Default tracker list for the Synapse Protocol
 DEFAULT_TRACKERS = [
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://open.tracker.cl:1337/announce",
-    "udp://tracker.torrent.eu.org:451/announce",
-    "udp://opentracker.i2p.rocks:6969/announce",
+    "http://hivebraintracker.com:8080/announce",
+    "udp://tracker.opentrackr.org:1337/announce",  # Fallback
+    "udp://open.tracker.cl:1337/announce",          # Fallback
 ]
 
 

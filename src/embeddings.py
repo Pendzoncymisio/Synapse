@@ -76,6 +76,7 @@ class LocalEmbedder:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
                 cache_dir=str(self.cache_dir),
+                trust_remote_code=True,  # Required for nomic models
             )
             
             # Check for cached ONNX model
@@ -97,6 +98,7 @@ class LocalEmbedder:
                     export=True,
                     provider="CPUExecutionProvider",
                     cache_dir=str(self.cache_dir),
+                    trust_remote_code=True,  # Required for nomic models
                 )
                 
                 # Save for future use
@@ -117,6 +119,7 @@ class LocalEmbedder:
             self.model = SentenceTransformer(
                 self.model_name,
                 cache_folder=str(self.cache_dir),
+                trust_remote_code=True,  # Required for nomic models
             )
             
         except ImportError:

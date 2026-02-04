@@ -154,25 +154,83 @@ class SynapseNode:
         
         self.sessions[shard.payload_hash] = session
         
-        # Announce to trackers (simulated)
-        self._announce_to_trackers(magnet)
+        # Announce to trackers with embedding
+        self._announce_to_trackers(magnet, shard)
         
         logger.info(f"Announced shard: {shard.display_name} ({shard.payload_hash})")
         return magnet
     
-    def _announce_to_trackers(self, magnet: MoltMagnet):
+    def _announce_to_trackers(self, magnet: MoltMagnet, shard: MemoryShard):
         """
         Announces presence to all trackers.
         
-        In a real implementation, this would send HTTP/UDP requests to trackers.
-        This is a placeholder that logs the announcement.
+        For HTTP trackers with /api/register endpoint, sends full shard metadata + embedding.
+        For UDP trackers, sends standard BitTorrent announce.
         """
+        import requests
+        
+        # Generate embedding from file content
+        embedding_list = None
+        try:
+            from .embeddings import create_embedder
+            
+            # Read file content (limit to first 8000 chars for embedding)
+            with open(shard.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(8000)
+            
+            # Generate 768D embedding vector
+            embedder = create_embedder(use_onnx=False)  # nomic-bert doesn't support ONNX
+            embedding_vector = embedder.encode(content)
+            embedding_list = embedding_vector.tolist()
+            
+            logger.info(f"Generated {len(embedding_list)}D embedding for {shard.display_name}")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
+        
         for tracker in magnet.trackers:
             logger.debug(f"Announcing {magnet.info_hash} to {tracker}")
-            # TODO: Implement actual tracker protocol
-            # - Send announce request with info_hash, peer_id, port
-            # - Parse tracker response for peer list
-            # - Update session.peers with discovered peers
+            
+            # Check if this is an HTTP tracker with /api/register
+            if tracker.startswith("http://") or tracker.startswith("https://"):
+                try:
+                    # Extract base URL
+                    base_url = tracker.replace("/announce", "")
+                    register_url = f"{base_url}/api/register"
+                    
+                    # Prepare registration data
+                    data = {
+                        "info_hash": magnet.info_hash,
+                        "display_name": magnet.display_name,
+                        "embedding_model": magnet.required_model,
+                        "dimension_size": magnet.dimension_size,
+                        "tags": magnet.tags,
+                        "file_size": magnet.file_size,
+                    }
+                    
+                    # Add embedding vector if generated
+                    if embedding_list:
+                        data["embedding"] = embedding_list
+                    
+                    # Add identity if available
+                    if magnet.creator_agent_id:
+                        data["creator_agent_id"] = magnet.creator_agent_id
+                    if magnet.creator_public_key:
+                        data["creator_public_key"] = magnet.creator_public_key
+                    
+                    logger.info(f"Registering with tracker: {register_url}")
+                    response = requests.post(register_url, json=data, timeout=10)
+                    
+                    if response.status_code == 200:
+                        logger.info(f"Successfully registered with {base_url}")
+                    else:
+                        logger.warning(f"Tracker registration failed: {response.status_code} - {response.text}")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to register with {tracker}: {e}")
+            
+            # UDP trackers would use standard BitTorrent protocol
+            # TODO: Implement UDP announce protocol
     
     def request_shard(
         self,
