@@ -190,16 +190,27 @@ class IdentityManager:
         public_key_path = self.identity_dir / f"{name}_public.key"
         identity_path = self.identity_dir / f"{name}_identity.json"
         
-        # Fallback to Ed25519 PEM format
+        # Fallback to PEM format (Ed25519 or ML-DSA-87)
         if not identity_path.exists():
             private_key_path = self.identity_dir / f"{name}_private.pem"
             public_key_path = self.identity_dir / f"{name}_public.pem"
             agent_id_path = self.identity_dir / "agent_id.txt"
             algorithm_path = self.identity_dir / "algorithm.txt"
             
-            if private_key_path.exists() and ED25519_AVAILABLE:
-                # Load Ed25519 identity
-                return self._load_ed25519_identity(name, private_key_path, public_key_path, agent_id_path, algorithm_path)
+            if private_key_path.exists():
+                # Check algorithm type
+                algorithm = "Ed25519"  # default
+                if algorithm_path.exists():
+                    algorithm = algorithm_path.read_text().strip()
+                
+                if algorithm == "ML-DSA-87":
+                    # For ML-DSA, just read the PEM files as-is (OpenSSL format)
+                    return self._load_mldsa_pem_identity(name, private_key_path, public_key_path, agent_id_path, algorithm)
+                elif ED25519_AVAILABLE:
+                    # Load Ed25519 identity
+                    return self._load_ed25519_identity(name, private_key_path, public_key_path, agent_id_path, algorithm_path)
+                else:
+                    raise RuntimeError("Ed25519 not available and algorithm is not ML-DSA-87")
             else:
                 raise FileNotFoundError(
                     f"Identity not found at {identity_path}. "
@@ -254,6 +265,37 @@ class IdentityManager:
         
         return self._identity
     
+    def _load_mldsa_pem_identity(self, name: str, private_key_path: Path, public_key_path: Path,
+                                   agent_id_path: Path, algorithm: str) -> AgentIdentity:
+        """Load ML-DSA-87 identity from OpenSSL PEM format (does not need liboqs)."""
+        # Read PEM files
+        private_pem = private_key_path.read_bytes()
+        public_pem = public_key_path.read_bytes()
+        
+        # Get agent ID
+        if agent_id_path.exists():
+            agent_id = agent_id_path.read_text().strip()
+        else:
+            # Generate from public key hash
+            agent_id = hashlib.sha256(public_pem).hexdigest()[:16]
+        
+        # Store for signing (will use OpenSSL subprocess)
+        self._mldsa_private_pem = private_pem
+        self._mldsa_public_pem = public_pem
+        
+        # Create identity object
+        public_b64 = base64.b64encode(public_pem).decode("utf-8")
+        self._identity = AgentIdentity(
+            agent_id=agent_id,
+            algorithm=algorithm,
+            public_key=public_b64,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            metadata={"source": "openssl_mldsa"}
+        )
+        self._algorithm = algorithm
+        
+        return self._identity
+
     def sign_message(self, message: bytes) -> str:
         """
         Sign a message with the loaded private key.
