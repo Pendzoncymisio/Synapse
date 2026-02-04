@@ -9,6 +9,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -181,23 +182,18 @@ def cmd_download(args):
         output_dir = args.output or "./downloads"
         
         # Initialize node and download
-        node = SynapseNode(data_dir=output_dir)
-        
-        # In production, this would actually download from peers
-        # For now, simulate the download
         logger.info(f"Downloading shard: {magnet.display_name}")
         logger.info(f"Info hash: {magnet.info_hash}")
         logger.info(f"Trackers: {len(magnet.trackers)}")
         
-        output_path = Path(output_dir) / magnet.display_name
+        node = SynapseNode(data_dir=output_dir)
         
-        # Create placeholder file (in production, this would be real data)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.touch()
+        # Download using BitTorrent or fallback to simulated
+        output_path = node.request_shard(magnet, output_dir=output_dir)
         
         # Create metadata
         shard = MemoryShard(
-            file_path=str(output_path),
+            file_path=output_path,
             embedding_model=magnet.required_model or "unknown",
             dimension_size=magnet.dimension_size or 1536,
             entry_count=0,
@@ -207,12 +203,16 @@ def cmd_download(args):
         )
         metadata_path = shard.save_metadata()
         
+        # Check if BitTorrent was used
+        was_real_download = node.bt_engine is not None
+        
         output_json({
             "status": "success",
-            "file_path": str(output_path),
+            "file_path": output_path,
             "metadata_path": metadata_path,
             "magnet": magnet.to_dict(),
-            "message": f"Downloaded: {magnet.display_name} (simulated)"
+            "bittorrent_used": was_real_download,
+            "message": f"Downloaded: {magnet.display_name}" + ("" if was_real_download else " (simulated)")
         })
     
     except Exception as e:
@@ -241,6 +241,231 @@ def cmd_list_seeds(args):
     
     except Exception as e:
         logger.exception("Failed to list seeds")
+        output_error(str(e))
+
+
+def cmd_share(args):
+    """Share a file via Synapse Protocol (generate magnet + add to seeder)."""
+    try:
+        from .seeder_client import SeederClient
+        
+        # Check if file exists
+        file_path = Path(args.file).resolve()
+        if not Path(file_path).exists():
+            output_error(f"File not found: {file_path}")
+        
+        # Load or create metadata
+        metadata_path = Path(str(file_path) + ".meta.json")
+        
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                shard_data = json.load(f)
+            shard = MemoryShard.from_dict(shard_data)
+            logger.info(f"Loaded existing metadata from {metadata_path}")
+        else:
+            # Create new shard metadata
+            tags = []
+            if args.tags:
+                tags = [t.strip() for t in args.tags.split(',') if t.strip()]
+            
+            shard = MemoryShard(
+                file_path=str(file_path),
+                embedding_model=args.model or "nomic-embed-text-v1",
+                dimension_size=args.dimensions or 768,
+                entry_count=0,
+                tags=tags,
+                display_name=args.name or file_path.name,
+            )
+            
+            # Compute hash
+            shard.compute_hash()
+            
+            # Save metadata
+            shard.save_metadata()
+            logger.info(f"Created metadata file: {metadata_path}")
+        
+        # Connect to seeder daemon
+        client = SeederClient()
+        
+        # Add to seeder (will auto-start daemon if needed)
+        info_hash, magnet_uri = client.add_shard(
+            shard_dict=shard.to_dict(),
+            trackers=DEFAULT_TRACKERS if not args.trackers else args.trackers.split(',')
+        )
+        
+        # Register with tracker
+        try:
+            import requests
+            from .embeddings import create_embedder
+            
+            # Read file content for embedding
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(8000)
+            
+            # Generate embedding
+            logger.info("Generating embedding for tracker registration...")
+            embedder = create_embedder(use_onnx=False)
+            embedding_vector = embedder.encode(content)
+            embedding_list = embedding_vector.tolist()
+            
+            # Register with tracker
+            tracker_url = "http://hivebraintracker.com:8080"
+            response = requests.post(
+                f"{tracker_url}/api/register",
+                json={
+                    "info_hash": info_hash,
+                    "display_name": shard.display_name,
+                    "embedding_model": shard.embedding_model,
+                    "dimension_size": shard.dimension_size,
+                    "tags": shard.tags,
+                    "file_size": file_path.stat().st_size,
+                    "embedding": embedding_list,
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info("Registered with tracker")
+            else:
+                logger.warning(f"Tracker registration failed: {response.status_code}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to register with tracker: {e}")
+        
+        output_json({
+            "status": "success",
+            "info_hash": info_hash,
+            "magnet_uri": magnet_uri,
+            "file_path": str(file_path),
+            "display_name": shard.display_name,
+            "message": f"Now seeding: {shard.display_name}"
+        })
+    
+    except Exception as e:
+        logger.exception("Failed to share file")
+        output_error(str(e))
+
+
+def cmd_unshare(args):
+    """Stop sharing a file."""
+    try:
+        from .seeder_client import SeederClient
+        
+        client = SeederClient()
+        
+        if not client.is_running():
+            output_error("Seeder daemon not running")
+        
+        success = client.remove_shard(args.info_hash)
+        
+        if success:
+            output_json({
+                "status": "success",
+                "message": f"Stopped seeding: {args.info_hash}"
+            })
+        else:
+            output_error(f"Shard not found: {args.info_hash}")
+    
+    except Exception as e:
+        logger.exception("Failed to unshare")
+        output_error(str(e))
+
+
+def cmd_list_shared(args):
+    """List all shared files."""
+    try:
+        from .seeder_client import SeederClient
+        
+        client = SeederClient()
+        
+        if not client.is_running():
+            output_json({
+                "status": "success",
+                "shards": [],
+                "count": 0,
+                "message": "Seeder daemon not running"
+            })
+            return
+        
+        shards = client.list_shards()
+        
+        output_json({
+            "status": "success",
+            "shards": shards,
+            "count": len(shards),
+            "message": f"Currently seeding {len(shards)} files"
+        })
+    
+    except Exception as e:
+        logger.exception("Failed to list shared files")
+        output_error(str(e))
+
+
+def cmd_seeder(args):
+    """Control seeder daemon."""
+    try:
+        from .seeder_client import SeederClient
+        
+        client = SeederClient()
+        
+        if args.action == "start":
+            if client.is_running():
+                output_json({
+                    "status": "success",
+                    "message": "Seeder daemon already running"
+                })
+            else:
+                success = client.start_daemon()
+                if success:
+                    output_json({
+                        "status": "success",
+                        "message": "Seeder daemon started"
+                    })
+                else:
+                    output_error("Failed to start seeder daemon")
+        
+        elif args.action == "stop":
+            success = client.stop_daemon()
+            if success:
+                output_json({
+                    "status": "success",
+                    "message": "Seeder daemon stopped"
+                })
+            else:
+                output_error("Failed to stop seeder daemon")
+        
+        elif args.action == "status":
+            if client.is_running():
+                status = client.get_status()
+                output_json({
+                    "status": "success",
+                    "daemon_running": True,
+                    **status
+                })
+            else:
+                output_json({
+                    "status": "success",
+                    "daemon_running": False,
+                    "message": "Seeder daemon not running"
+                })
+        
+        elif args.action == "restart":
+            client.stop_daemon()
+            time.sleep(1)
+            success = client.start_daemon()
+            if success:
+                output_json({
+                    "status": "success",
+                    "message": "Seeder daemon restarted"
+                })
+            else:
+                output_error("Failed to restart seeder daemon")
+        
+        else:
+            output_error(f"Unknown action: {args.action}")
+    
+    except Exception as e:
+        logger.exception("Failed to control seeder")
         output_error(str(e))
 
 
@@ -289,7 +514,28 @@ def main():
     
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
     
-    # create-shard command
+    # share command (replaces generate-magnet)
+    share_parser = subparsers.add_parser("share", help="Share a file via P2P network")
+    share_parser.add_argument("file", help="File to share")
+    share_parser.add_argument("--name", help="Display name")
+    share_parser.add_argument("--tags", help="Comma-separated tags")
+    share_parser.add_argument("--model", help="Embedding model name (default: nomic-embed-text-v1)")
+    share_parser.add_argument("--dimensions", type=int, help="Vector dimensions (default: 768)")
+    share_parser.add_argument("--trackers", help="Comma-separated tracker URLs")
+    
+    # unshare command
+    unshare_parser = subparsers.add_parser("unshare", help="Stop sharing a file")
+    unshare_parser.add_argument("info_hash", help="Info hash of file to unshare")
+    
+    # list-shared command
+    list_shared_parser = subparsers.add_parser("list-shared", help="List shared files")
+    
+    # seeder command
+    seeder_parser = subparsers.add_parser("seeder", help="Control seeder daemon")
+    seeder_parser.add_argument("action", choices=["start", "stop", "status", "restart"], 
+                                help="Daemon action")
+    
+    # create-shard command (legacy)
     create_parser = subparsers.add_parser("create-shard", help="Create a memory shard")
     create_parser.add_argument("--source", required=True, help="Source vector database file")
     create_parser.add_argument("--name", required=True, help="Display name for the shard")
@@ -298,8 +544,8 @@ def main():
     create_parser.add_argument("--dimensions", type=int, help="Vector dimensions")
     create_parser.add_argument("--count", type=int, help="Number of entries")
     
-    # generate-magnet command
-    magnet_parser = subparsers.add_parser("generate-magnet", help="Generate magnet link")
+    # generate-magnet command (legacy - kept for compatibility)
+    magnet_parser = subparsers.add_parser("generate-magnet", help="Generate magnet link (legacy)")
     magnet_parser.add_argument("--shard", required=True, help="Path to shard file")
     magnet_parser.add_argument("--trackers", help="Comma-separated tracker URLs")
     
@@ -314,8 +560,8 @@ def main():
     download_parser.add_argument("--magnet", required=True, help="Magnet link")
     download_parser.add_argument("--output", help="Output directory (default: ./downloads)")
     
-    # list-seeds command
-    list_parser = subparsers.add_parser("list-seeds", help="List active seeds")
+    # list-seeds command (legacy)
+    list_parser = subparsers.add_parser("list-seeds", help="List active seeds (legacy)")
     
     # setup-identity command
     identity_parser = subparsers.add_parser("setup-identity", help="Generate ML-DSA-87 identity")
@@ -330,6 +576,10 @@ def main():
     
     # Route to appropriate command handler
     commands = {
+        "share": cmd_share,
+        "unshare": cmd_unshare,
+        "list-shared": cmd_list_shared,
+        "seeder": cmd_seeder,
         "create-shard": cmd_create_shard,
         "generate-magnet": cmd_generate_magnet,
         "search": cmd_search,

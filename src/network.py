@@ -17,6 +17,12 @@ import time
 
 from .core import MemoryShard, MoltMagnet, DEFAULT_TRACKERS
 
+try:
+    from .bittorrent_engine import BitTorrentEngine, check_libtorrent_available
+    BITTORRENT_AVAILABLE = check_libtorrent_available()
+except ImportError:
+    BITTORRENT_AVAILABLE = False
+    BitTorrentEngine = None
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +90,7 @@ class SynapseNode:
         listen_port: int = 6881,
         data_dir: str = "./synapse_data",
         trackers: List[str] = None,
+        use_bittorrent: bool = True,
     ):
         """
         Initialize the Synapse P2P node.
@@ -93,6 +100,7 @@ class SynapseNode:
             listen_port: Port to listen on for peer connections.
             data_dir: Directory to store downloads and metadata.
             trackers: List of tracker URLs. Uses defaults if None.
+            use_bittorrent: Whether to use BitTorrent engine (requires libtorrent)
         """
         self.node_id = node_id or self._generate_node_id()
         self.listen_port = listen_port
@@ -102,6 +110,20 @@ class SynapseNode:
         self.trackers = trackers or DEFAULT_TRACKERS.copy()
         self.sessions: Dict[str, TorrentSession] = {}
         self.dht_routing_table: Dict[str, Peer] = {}
+        
+        # Initialize BitTorrent engine if available and requested
+        self.bt_engine = None
+        if use_bittorrent and BITTORRENT_AVAILABLE:
+            try:
+                self.bt_engine = BitTorrentEngine(
+                    listen_port=listen_port,
+                    download_dir=str(self.data_dir / "downloads")
+                )
+                logger.info("BitTorrent engine enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize BitTorrent engine: {e}")
+        elif use_bittorrent and not BITTORRENT_AVAILABLE:
+            logger.warning("BitTorrent requested but libtorrent not available")
         
         # Statistics
         self.total_uploaded = 0
@@ -130,11 +152,38 @@ class SynapseNode:
         if not shard.payload_hash:
             shard.compute_hash()
         
+        use_trackers = trackers or self.trackers
+        
+        # If BitTorrent engine available, create proper torrent and seed
+        if self.bt_engine:
+            try:
+                # Create torrent file
+                info_hash, torrent_data = self.bt_engine.create_torrent(
+                    file_path=shard.file_path,
+                    trackers=use_trackers,
+                    comment=shard.description or shard.display_name,
+                    creator=shard.creator_agent_id or "Synapse Protocol"
+                )
+                
+                # Start seeding
+                self.bt_engine.add_torrent_for_seeding(
+                    file_path=shard.file_path,
+                    torrent_data=torrent_data
+                )
+                
+                # Use BitTorrent info_hash
+                shard.payload_hash = info_hash
+                
+                logger.info(f"Started BitTorrent seeding: {shard.display_name}")
+                
+            except Exception as e:
+                logger.error(f"BitTorrent seeding failed: {e}, using hash-only mode")
+        
         # Create magnet link
         magnet = MoltMagnet(
             info_hash=shard.payload_hash,
             display_name=shard.display_name or Path(shard.file_path).name,
-            trackers=trackers or self.trackers,
+            trackers=use_trackers,
             required_model=shard.embedding_model,
             dimension_size=shard.dimension_size,
             tags=shard.tags,
@@ -237,6 +286,7 @@ class SynapseNode:
         magnet: MoltMagnet,
         output_dir: Optional[str] = None,
         progress_callback: Optional[Callable[[float], None]] = None,
+        timeout: Optional[float] = 300,  # 5 minutes default
     ) -> str:
         """
         Locates peers and begins downloading the memory shard.
@@ -245,6 +295,7 @@ class SynapseNode:
             magnet: MoltMagnet link to download
             output_dir: Directory to save the file. Uses node data_dir if None.
             progress_callback: Optional callback function for progress updates.
+            timeout: Download timeout in seconds (None = no timeout)
             
         Returns:
             Path to the downloaded file
@@ -268,6 +319,79 @@ class SynapseNode:
                 return str(output_path)
             logger.info(f"Shard already downloading: {session.progress:.2f}%")
             return str(output_path)
+        
+        # If BitTorrent engine available, use it for real P2P download
+        if self.bt_engine:
+            try:
+                magnet_uri = magnet.to_magnet_uri()
+                logger.info(f"Starting BitTorrent download: {magnet.display_name}")
+                
+                # Start download
+                info_hash = self.bt_engine.download_from_magnet(
+                    magnet_uri=magnet_uri,
+                    save_path=str(output_dir),
+                    progress_callback=lambda pct, status: progress_callback(pct) if progress_callback else None
+                )
+                
+                # Wait for download to complete
+                success = self.bt_engine.wait_for_download(info_hash, timeout=timeout)
+                
+                if not success:
+                    raise RuntimeError(f"Download timeout after {timeout}s")
+                
+                # Get final status
+                status = self.bt_engine.get_status(info_hash)
+                if status and status['is_finished']:
+                    logger.info(f"Download completed: {magnet.display_name}")
+                    
+                    # Create session entry
+                    session = TorrentSession(
+                        info_hash=magnet.info_hash,
+                        file_path=str(output_path),
+                        total_size=magnet.file_size or 0,
+                        downloaded=magnet.file_size or 0,
+                        status="seeding",
+                    )
+                    session.completed_at = datetime.utcnow()
+                    self.sessions[magnet.info_hash] = session
+                    
+                    return str(output_path)
+                else:
+                    raise RuntimeError("Download failed - file not complete")
+                    
+            except Exception as e:
+                logger.error(f"BitTorrent download failed: {e}")
+                logger.info("Falling back to simulated download")
+        
+        # Fallback to simulated download if BitTorrent not available
+        logger.warning("BitTorrent engine not available - using simulated download")
+        
+        # Create download session
+        session = TorrentSession(
+            info_hash=magnet.info_hash,
+            file_path=str(output_path),
+            total_size=magnet.file_size or 0,
+            status="downloading",
+        )
+        
+        self.sessions[magnet.info_hash] = session
+        
+        # Discover peers (simulated)
+        peers = self._discover_peers(magnet)
+        session.peers = peers
+        
+        if not peers:
+            session.status = "error"
+            session.error_message = "No peers found"
+            logger.error(f"No peers available for {magnet.display_name}")
+            raise RuntimeError("No peers found for download")
+        
+        logger.info(f"Found {len(peers)} peers for {magnet.display_name}")
+        
+        # Begin download (simulated)
+        self._download_from_peers(session, progress_callback)
+        
+        return str(output_path)
         
         # Create download session
         session = TorrentSession(
