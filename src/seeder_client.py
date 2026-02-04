@@ -51,8 +51,19 @@ class SeederClient:
             client_socket.connect(self.socket_path)
             client_socket.sendall(json.dumps(request).encode('utf-8'))
             
-            response_data = client_socket.recv(8192).decode('utf-8')
-            response = json.loads(response_data)
+            # Receive response in chunks to handle large signatures
+            response_data = b''
+            while True:
+                chunk = client_socket.recv(65536)  # 64KB chunks
+                if not chunk:
+                    break
+                response_data += chunk
+                # Check if we have a complete JSON response
+                try:
+                    response = json.loads(response_data.decode('utf-8'))
+                    break
+                except json.JSONDecodeError:
+                    continue  # Keep receiving more data
             
             return response
             
