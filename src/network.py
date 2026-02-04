@@ -266,6 +266,8 @@ class SynapseNode:
                         data["creator_agent_id"] = magnet.creator_agent_id
                     if magnet.creator_public_key:
                         data["creator_public_key"] = magnet.creator_public_key
+                    if magnet.signature:
+                        data["signature"] = magnet.signature
                     
                     logger.info(f"Registering with tracker: {register_url}")
                     response = requests.post(register_url, json=data, timeout=10)

@@ -333,17 +333,27 @@ def cmd_share(args):
             
             # Register with tracker
             tracker_url = "http://hivebraintracker.com:8080"
+            register_data = {
+                "info_hash": info_hash,
+                "display_name": shard.display_name,
+                "embedding_model": shard.embedding_model,
+                "dimension_size": shard.dimension_size,
+                "tags": shard.tags,
+                "file_size": file_path.stat().st_size,
+                "embedding": embedding_list,
+            }
+            
+            # Add identity fields if available
+            if shard.creator_agent_id:
+                register_data["creator_agent_id"] = shard.creator_agent_id
+            if shard.creator_public_key:
+                register_data["creator_public_key"] = shard.creator_public_key
+            if shard.signature:
+                register_data["signature"] = shard.signature
+            
             response = requests.post(
                 f"{tracker_url}/api/register",
-                json={
-                    "info_hash": info_hash,
-                    "display_name": shard.display_name,
-                    "embedding_model": shard.embedding_model,
-                    "dimension_size": shard.dimension_size,
-                    "tags": shard.tags,
-                    "file_size": file_path.stat().st_size,
-                    "embedding": embedding_list,
-                },
+                json=register_data,
                 timeout=10
             )
             
