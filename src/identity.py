@@ -314,12 +314,45 @@ class IdentityManager:
             signature = self._ed25519_key.sign(message)
             return base64.b64encode(signature).decode('utf-8')
         elif self._signer is not None:
-            # Use ML-DSA-87 signing
+            # Use ML-DSA-87 signing with liboqs
             signature = self._signer.sign(message)
+            return base64.b64encode(signature).decode('utf-8')
+        elif hasattr(self, '_mldsa_private_pem') and self._algorithm == "ML-DSA-87":
+            # Use OpenSSL for ML-DSA signing
+            signature = self._sign_with_openssl(message)
             return base64.b64encode(signature).decode('utf-8')
         else:
             raise RuntimeError("No identity loaded. Call load_identity() first.")
     
+    def _sign_with_openssl(self, message: bytes) -> bytes:
+        """Sign a message using OpenSSL subprocess for ML-DSA."""
+        import subprocess
+        import tempfile
+        
+        # Write private key to temp file
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".pem") as key_file:
+            key_file.write(self._mldsa_private_pem)
+            key_path = key_file.name
+        
+        # Write message to temp file
+        with tempfile.NamedTemporaryFile(mode="wb", delete=False) as msg_file:
+            msg_file.write(message)
+            msg_path = msg_file.name
+        
+        try:
+            # Sign with OpenSSL
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-sign", "-inkey", key_path, "-in", msg_path],
+                capture_output=True,
+                check=True
+            )
+            return result.stdout
+        finally:
+            # Clean up temp files
+            import os
+            os.unlink(key_path)
+            os.unlink(msg_path)
+
     def sign_json(self, data: Dict) -> str:
         """
         Sign a JSON-serializable dictionary.

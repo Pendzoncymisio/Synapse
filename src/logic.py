@@ -295,6 +295,14 @@ def cmd_share(args):
             # Compute hash
             shard.compute_hash()
             
+            # Sign the shard if identity is loaded
+            if creator_agent_id and creator_public_key:
+                try:
+                    shard.sign_shard(identity_mgr)
+                    logger.info(f"Signed shard with identity: {creator_agent_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to sign shard: {e}")
+            
             # Save metadata
             shard.save_metadata()
             logger.info(f"Created metadata file: {metadata_path}")
