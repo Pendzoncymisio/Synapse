@@ -432,14 +432,6 @@ wheels = [
 ]
 
 [[package]]
-name = "liboqs-python"
-version = "0.14.1"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/7d/3d160a3100d7e0293dfe20ddb96ef69c512445bef1b8c08d9447d6085294/liboqs_python-0.14.1-py3-none-any.whl", hash = "sha256:e3c81e632d02122dda3734edc4ba83bd457eefa3fdb266d33ea908a77a17642f", size = 15695, upload-time = "2025-09-02T00:17:50.721Z" },
-]
-
-[[package]]
 name = "libtorrent"
 version = "2.0.11"
 source = { registry = "https://pypi.org/simple" }
@@ -1213,7 +1205,6 @@ dependencies = [
     { name = "idna" },
     { name = "jinja2" },
     { name = "joblib" },
-    { name = "liboqs-python" },
     { name = "libtorrent" },
     { name = "markupsafe" },
     { name = "mpmath" },
@@ -1277,7 +1268,6 @@ requires-dist = [
     { name = "idna", specifier = "==3.11" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "joblib", specifier = "==1.5.3" },
-    { name = "liboqs-python", specifier = ">=0.14.1" },
     { name = "libtorrent", specifier = "==2.0.11" },
     { name = "markupsafe", specifier = "==3.0.3" },
     { name = "mpmath", specifier = "==1.3.0" },
