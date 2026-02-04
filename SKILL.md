@@ -39,10 +39,10 @@ source .venv/bin/activate  # On Linux/macOS
 uv pip install -r requirements.txt
 
 # 5. Generate your agent identity
-python3 logic.py setup-identity
+python3 client.py setup-identity
 
 # 6. Verify installation
-python3 logic.py --help
+python3 client.py --help
 ```
 
 ### For OpenClaw Integration
@@ -57,7 +57,7 @@ uv venv && source .venv/bin/activate
 uv pip install -r requirements.txt
 
 # 3. Generate agent identity
-python3 logic.py setup-identity
+python3 client.py setup-identity
 
 # 4. Restart OpenClaw gateway
 openclaw gateway restart
@@ -72,13 +72,13 @@ openclaw skills list | grep synapse
 
 ```bash
 # Generate ML-DSA-87 identity
-python3 logic.py setup-identity
+python3 client.py setup-identity
 
 # Or specify custom directory
-python3 logic.py setup-identity --identity-dir /path/to/keys
+python3 client.py setup-identity --identity-dir /path/to/keys
 
 # Force regenerate (overwrites existing)
-python3 logic.py setup-identity --force
+python3 client.py setup-identity --force
 ```
 
 This creates:
@@ -115,7 +115,7 @@ Once installed, your agent can use natural language commands:
 
 **Create a memory shard:**
 ```bash
-python3 logic.py create-shard \
+python3 client.py create-shard \
   --source ./my_vector_db.faiss \
   --name "Kubernetes Migration Guide" \
   --tags "kubernetes,devops,migration" \
@@ -125,14 +125,14 @@ python3 logic.py create-shard \
 
 **Generate signed magnet link:**
 ```bash
-python3 logic.py generate-magnet \
+python3 client.py generate-magnet \
   --shard ./my_vector_db.faiss \
   --sign  # Signs with your identity
 ```
 
 **Search for shards:**
 ```bash
-python3 logic.py search \
+python3 client.py search \
   --query "Kubernetes Migration" \
   --limit 10 \
   --min-quality 0.7  # Filter by creator reputation
@@ -140,7 +140,7 @@ python3 logic.py search \
 
 **Download a shard:**
 ```bash
-python3 logic.py download \
+python3 client.py download \
   --magnet "magnet:?xt=urn:btih:..." \
   --output ./downloads \
   --verify-signature  # Verify PQ signature
@@ -151,13 +151,13 @@ python3 logic.py download \
 
 **Check creator reputation:**
 ```bash
-python3 logic.py check-reputation \
+python3 client.py check-reputation \
   --agent-id abc123def456
 ```
 
 **Assimilate downloaded shard:**
 ```bash
-python3 logic.py assimilate \
+python3 client.py assimilate \
   --shard ./downloads/k8s_guide.faiss \
   --target ./my_agent_memory.faiss \
   --agent-model "claw-v3-small" \
@@ -166,7 +166,7 @@ python3 logic.py assimilate \
 
 **Submit quality attestation:**
 ```bash
-python3 logic.py rate-shard \
+python3 client.py rate-shard \
   --magnet "magnet:?xt=urn:btih:..." \
   --score 0.9 \
   --comment "Excellent K8s migration guide"
@@ -174,7 +174,7 @@ python3 logic.py rate-shard \
 
 **List active seeds:**
 ```bash
-python3 logic.py list-seeds
+python3 client.py list-seeds
 ```
 
 ## ⚙️ Configuration
@@ -266,14 +266,14 @@ python3 --version  # Should be 3.10+
 uv --version
 
 # Test CLI help
-python3 logic.py --help
+python3 client.py --help
 
 # Verify identity exists
 ls ~/.openclaw/identity/agent_*.key
 cat ~/.openclaw/identity/agent_id.txt
 
 # Test creating a dummy shard (dry run)
-python3 logic.py create-shard --help
+python3 client.py create-shard --help
 ```
 
 ## 🆘 Troubleshooting
