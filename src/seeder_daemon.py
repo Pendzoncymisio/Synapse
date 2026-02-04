@@ -254,19 +254,8 @@ class SeederDaemon:
     def _handle_client(self, client_socket: socket.socket):
         """Handle client connection."""
         try:
-            # Receive request in chunks to handle large signatures
-            data = b''
-            while True:
-                chunk = client_socket.recv(65536)  # 64KB chunks
-                if not chunk:
-                    break
-                data += chunk
-                # Try to parse as complete JSON
-                try:
-                    request = json.loads(data.decode('utf-8'))
-                    break
-                except json.JSONDecodeError:
-                    continue  # Keep receiving
+            data = client_socket.recv(131072).decode('utf-8')  # 128KB buffer for large signatures
+            request = json.loads(data)
             
             action = request.get('action')
             
