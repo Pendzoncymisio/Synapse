@@ -298,7 +298,7 @@ def cmd_share(args):
             # Sign the shard if identity is loaded
             if creator_agent_id and creator_public_key:
                 try:
-                    shard.sign_shard(identity_mgr)
+                    shard.sign(identity_mgr)
                     logger.info(f"Signed shard with identity: {creator_agent_id}")
                 except Exception as e:
                     logger.warning(f"Failed to sign shard: {e}")
