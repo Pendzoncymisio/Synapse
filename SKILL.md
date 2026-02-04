@@ -1,7 +1,7 @@
 ---
 name: synapse-protocol
 description: "P2P file sharing with semantic search using BitTorrent and vector embeddings"
-bins: ["python3", "uv"]
+bins: ["uv"]
 os: ["darwin", "linux"]
 version: "2.0.0"
 author: "HiveBrain Project"
@@ -29,16 +29,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 2. Navigate to Synapse directory
 cd /path/to/HiveBrain/Synapse
 
-# 3. Create virtual environment
-uv venv
-source .venv/bin/activate
+# 3. Dependencies auto-installed on first run via uv
+# No manual venv or pip install needed!
 
-# 4. Install dependencies
-uv pip install -r requirements.txt
-
-# 5. Verify installation
-python3 client.py --help
+# 4. Verify installation
+uv run python client.py --help
 ```
+
+> **Note**: Always use `uv run python` instead of `python3`. The uv environment includes sentence-transformers and all dependencies, while system Python may not have them installed.
 
 ## 📝 Usage
 
@@ -46,20 +44,20 @@ python3 client.py --help
 
 ```bash
 # Start seeder daemon (runs in background)
-python3 client.py seeder start
+uv run python client.py seeder start
 
 # Check status
-python3 client.py seeder status
+uv run python client.py seeder status
 
 # Stop daemon
-python3 client.py seeder stop
+uv run python client.py seeder stop
 ```
 
 ### Share Files
 
 ```bash
 # Share a file (auto-starts seeder if needed)
-python3 client.py share /path/to/file.md \
+uv run python client.py share /path/to/file.md \
   --name "My Document" \
   --tags "doc,knowledge"
 
@@ -70,17 +68,17 @@ python3 client.py share /path/to/file.md \
 
 ```bash
 # List what you're sharing
-python3 client.py list-shared
+uv run python client.py list-shared
 
 # Stop sharing a specific file
-python3 client.py unshare <info_hash>
+uv run python client.py unshare <info_hash>
 ```
 
 ### Search Network
 
 ```bash
 # Search by content similarity
-python3 client.py search \
+uv run python client.py search \
   --query "kubernetes deployment guide" \
   --limit 10
 
@@ -91,7 +89,7 @@ python3 client.py search \
 
 ```bash
 # Download using magnet link from search results
-python3 client.py download \
+uv run python client.py download \
   --magnet "magnet:?xt=urn:btih:..." \
   --output ./downloads
 ```
@@ -111,32 +109,30 @@ Default tracker: `http://hivebraintracker.com:8080`
 
 To use custom trackers:
 ```bash
-python3 client.py share file.txt --trackers "http://tracker1.com,http://tracker2.com"
+uv run python client.py share file.txt --trackers "http://tracker1.com,http://tracker2.com"
 ```
 
 ## 🔍 Testing Installation
 
 ```bash
-# Check Python version
-python3 --version  # Should be 3.10+
-
 # Check uv installed
 uv --version
 
-# Test CLI
-python3 client.py --help
+# Test CLI (auto-installs dependencies on first run)
+uv run python client.py --help
 
 # Test seeder
-python3 client.py seeder status
+uv run python client.py seeder status
 ```
 
 ## 🆘 Troubleshooting
 
 **Issue**: `ModuleNotFoundError: No module named 'libtorrent'`
-- **Solution**: Install: `uv pip install libtorrent`
+- **Solution**: Add to pyproject.toml or install: `uv pip install libtorrent`
 
-**Issue**: `sentence-transformers` not found
-- **Solution**: Install: `uv pip install sentence-transformers einops`
+**Issue**: `sentence-transformers not found` error
+- **Solution**: Use `uv run python` instead of `python3`. System Python doesn't have the dependencies.
+- **Alternative**: Manually activate: `source .venv/bin/activate && python client.py ...`
 
 **Issue**: Port 6881 already in use
 - **Solution**: Change port: `export SYNAPSE_PORT=6882`
