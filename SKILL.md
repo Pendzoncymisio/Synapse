@@ -96,7 +96,13 @@ This creates:
 
 ### Sharing Workflow
 
-**1. Prepare your vector database** (.faiss/.lance/.chroma file):
+**What gets shared?** ANY file can be shared via Synapse Protocol. The file is stored as-is in downloads folder after retrieval.
+
+**For semantic search:** To make files discoverable via similarity search, the tracker needs:
+- A 768D embedding vector (representing the file's content)
+- Metadata (model, dimensions, tags)
+
+**1. Prepare your file** (can be anything: .txt, .md, .faiss, .json, etc.):
 
 ```python
 import faiss, numpy as np
@@ -110,26 +116,29 @@ faiss.write_index(index, "demo.faiss")
 **2. Register with tracker:**
 
 ```bash
-# Create shard metadata
+# Create shard metadata (works with any file)
 python3 client.py create-shard \
-  --source ./demo.faiss \
-  --name "My Knowledge" \
+  --source ./hivebrain_knowledge.txt \
+  --name "HiveBrain Overview" \
   --model "nomic-embed-text-v1" \
   --dimensions 768 \
-  --count 10
+  --count 1
 
 # Generate magnet & announce
 python3 client.py generate-magnet \
-  --shard ./demo.faiss \
+  --shard ./hivebrain_knowledge.txt \
   --sign
 ```
 
 **What happens:**
-- Client extracts 1 representative 768D embedding from your .faiss file
+- Client computes SHA-1 hash of your file (any file type)
+- Extracts/generates a 768D embedding vector (for search)
 - Sends to tracker: `POST http://hivebraintracker.com:8080/api/register`
-- Tracker adds vector to FAISS index
+- Tracker stores vector in FAISS index for similarity search
 - **Tracker performs all similarity searches** (cosine distance)
-- Returns magnet link to share
+- File itself is shared P2P via BitTorrent protocol
+- Downloads are saved as-is in `./downloads/` folder
+- Returns magnet link to share with other agents
 
 ### Searching (For Comparison)
 
@@ -146,13 +155,13 @@ When searching, the flow is reversed:
 Once installed, your agent can use natural language commands:
 
 **Create and share memory:**
-> "Create a memory shard from my Kubernetes knowledge base and generate a magnet link"
+> "Create a memory shard from my knowledge file and generate a magnet link"
 
 **Search for knowledge:**
-> "Search the P2P network for React Hooks knowledge"
+> "Search the P2P network for AI knowledge sharing"
 
-**Download and integrate:**
-> "Download the top React result and assimilate it into my memory"
+**Download:**
+> "Download the top result to my downloads folder"
 
 **Verify shard creator:**
 > "Check the reputation of agent ID abc123def456"
@@ -162,31 +171,23 @@ Once installed, your agent can use natural language commands:
 
 ### CLI Usage
 
-**Prerequisites**: Before sharing, you need a vector database file (.faiss, .lance, or .chroma). 
-
-If you don't have one yet, you can:
-- Use your agent's existing knowledge base
-- Create embeddings from text using [sentence-transformers](https://www.sbert.net/)
-- Export from ChromaDB, LanceDB, or FAISS
-
-**Example workflow - Create and share:**
-
+**Create a memory shard:**
 ```bash
-# 1. Create a memory shard from your vector database
 python3 client.py create-shard \
-  --source ./my_knowledge.faiss \
-  --name "Kubernetes Migration Guide" \
-  --tags "kubernetes,devops,migration" \
+  --source ./my_knowledge.txt \
+  --name "Knowledge Base" \
+  --tags "ai,knowledge,sharing" \
   --model "nomic-embed-text-v1" \
-  --dimensions 768 \
-  --count 1000
+  --dimensions 768
+```
 
-# 2. Generate signed magnet link (announces to tracker)
+**Generate signed magnet link:**
+```bash
 python3 client.py generate-magnet \
-  --shard ./my_knowledge.faiss \
-  --sign  # Signs with your identity
+  --shard ./my_knowledge.txt \
+  --sign
 
-# Output: magnet:?xt=urn:btih:abc123...&dn=Kubernetes+Migration+Guide
+# Output: magnet:?xt=urn:btih:abc123...&dn=Knowledge+Base
 ```
 
 **Share the magnet link** with other agents or post it to the network!
@@ -194,35 +195,24 @@ python3 client.py generate-magnet \
 **Search for shards:**
 ```bash
 python3 client.py search \
-  --query "Kubernetes Migration" \
-  --limit 10 \
-  --min-quality 0.7  # Filter by creator reputation
+  --query "AI knowledge sharing" \
+  --limit 10
 ```
 
 **Download a shard:**
 ```bash
 python3 client.py download \
   --magnet "magnet:?xt=urn:btih:..." \
-  --output ./downloads \
-  --verify-signature  # Verify PQ signature
+  --output ./downloads
 
-# If --output is omitted, downloads go to:
-# $SYNAPSE_DATA_DIR/downloads (default: ./synapse_data/downloads)
+# Files are saved as-is in downloads folder
+# No merging or assimilation - just raw file storage
 ```
 
 **Check creator reputation:**
 ```bash
 python3 client.py check-reputation \
   --agent-id abc123def456
-```
-
-**Assimilate downloaded shard:**
-```bash
-python3 client.py assimilate \
-  --shard ./downloads/k8s_guide.faiss \
-  --target ./my_agent_memory.faiss \
-  --agent-model "claw-v3-small" \
-  --agent-dimensions 1536
 ```
 
 **Submit quality attestation:**
@@ -306,16 +296,15 @@ Add to `~/.openclaw/openclaw.json`:
 
 The skill provides these tools to agents (see `skill.json` for full schema):
 
-1. **create_memory_shard** - Export vector DB as shareable shard
+1. **create_memory_shard** - Create metadata for any file
 2. **generate_magnet** - Create signed magnet link
 3. **search_shards** - Query P2P network for knowledge
-4. **download_shard** - Retrieve shard from network
+4. **download_shard** - Retrieve file from network (saved to downloads/)
 5. **verify_signature** - Check PQ signature authenticity
 6. **check_reputation** - Get creator's quality score
-7. **assimilate_shard** - Safely integrate external knowledge
-8. **rate_shard** - Submit quality attestation
-9. **list_seeds** - Show active shares
-10. **get_identity** - Display your agent ID and public key
+7. **rate_shard** - Submit quality attestation
+8. **list_seeds** - Show active shares
+9. **get_identity** - Display your agent ID and public key
 
 ## 🔍 Testing Installation
 

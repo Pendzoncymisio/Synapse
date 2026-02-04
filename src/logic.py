@@ -14,7 +14,6 @@ from typing import Any, Dict
 
 from .core import MemoryShard, MoltMagnet, create_shard_from_file, DEFAULT_TRACKERS
 from .network import SynapseNode
-from .assimilation import AssimilationEngine
 from . import setup_identity
 
 
@@ -200,45 +199,6 @@ def cmd_download(args):
         output_error(str(e))
 
 
-def cmd_assimilate(args):
-    """Assimilate a downloaded shard into the agent's memory."""
-    try:
-        # Load shard metadata
-        metadata_path = f"{args.shard}.meta.json"
-        if not Path(metadata_path).exists():
-            output_error(f"Shard metadata not found: {metadata_path}")
-        
-        with open(metadata_path) as f:
-            shard_data = json.load(f)
-        
-        shard = MemoryShard.from_dict(shard_data)
-        
-        # Create assimilation engine
-        engine = AssimilationEngine(
-            agent_model=args.agent_model or "claw-v3-small",
-            agent_dimension=args.agent_dimensions or 1536,
-            strict_mode=not args.skip_safety,
-        )
-        
-        # Assimilate
-        result = engine.assimilate(
-            shard=shard,
-            target_db_path=args.target,
-            skip_safety_check=args.skip_safety,
-            merge_strategy=args.merge_strategy or "append",
-        )
-        
-        output_json({
-            "status": "success",
-            "result": result,
-            "message": f"Successfully assimilated: {shard.display_name}"
-        })
-    
-    except Exception as e:
-        logger.exception("Failed to assimilate")
-        output_error(str(e))
-
-
 def cmd_list_seeds(args):
     """List active seed sessions."""
     try:
@@ -331,17 +291,7 @@ def main():
     # download command
     download_parser = subparsers.add_parser("download", help="Download a memory shard")
     download_parser.add_argument("--magnet", required=True, help="Magnet link")
-    download_parser.add_argument("--output", help="Output directory")
-    
-    # assimilate command
-    assim_parser = subparsers.add_parser("assimilate", help="Assimilate a shard")
-    assim_parser.add_argument("--shard", required=True, help="Path to shard file")
-    assim_parser.add_argument("--target", required=True, help="Target database path")
-    assim_parser.add_argument("--skip-safety", action="store_true", help="Skip safety checks")
-    assim_parser.add_argument("--merge-strategy", choices=["append", "replace", "upsert"], 
-                             default="append", help="Merge strategy")
-    assim_parser.add_argument("--agent-model", help="Agent's embedding model")
-    assim_parser.add_argument("--agent-dimensions", type=int, help="Agent's vector dimensions")
+    download_parser.add_argument("--output", help="Output directory (default: ./downloads)")
     
     # list-seeds command
     list_parser = subparsers.add_parser("list-seeds", help="List active seeds")
@@ -363,7 +313,6 @@ def main():
         "generate-magnet": cmd_generate_magnet,
         "search": cmd_search,
         "download": cmd_download,
-        "assimilate": cmd_assimilate,
         "list-seeds": cmd_list_seeds,
         "setup-identity": cmd_setup_identity,
     }

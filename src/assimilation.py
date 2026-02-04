@@ -1,4 +1,5 @@
 """
+WiP, do not assimilate anything on the protocol testing stage.
 Assimilation Engine for the Synapse Protocol.
 
 Handles the critical transition from 'Downloaded File' to 'Active Memory'
