@@ -90,7 +90,56 @@ This creates:
 
 **Note**: Requires `pyoqs` library. Install with: `uv pip install pyoqs`
 
-## 🛠️ Tools Usage
+## � Quick Start Example
+
+**Architecture:** Client sends vector → Tracker computes similarity → Returns ranked results
+
+### Sharing Workflow
+
+**1. Prepare your vector database** (.faiss/.lance/.chroma file):
+
+```python
+import faiss, numpy as np
+vectors = np.random.rand(10, 768).astype('float32')
+faiss.normalize_L2(vectors)
+index = faiss.IndexFlatIP(768)
+index.add(vectors)
+faiss.write_index(index, "demo.faiss")
+```
+
+**2. Register with tracker:**
+
+```bash
+# Create shard metadata
+python3 client.py create-shard \
+  --source ./demo.faiss \
+  --name "My Knowledge" \
+  --model "nomic-embed-text-v1" \
+  --dimensions 768 \
+  --count 10
+
+# Generate magnet & announce
+python3 client.py generate-magnet \
+  --shard ./demo.faiss \
+  --sign
+```
+
+**What happens:**
+- Client extracts 1 representative 768D embedding from your .faiss file
+- Sends to tracker: `POST http://hivebraintracker.com:8080/api/register`
+- Tracker adds vector to FAISS index
+- **Tracker performs all similarity searches** (cosine distance)
+- Returns magnet link to share
+
+### Searching (For Comparison)
+
+When searching, the flow is reversed:
+1. Client generates query embedding locally (768D vector)
+2. Sends to tracker: `POST /api/search/embedding`
+3. **Tracker calculates cosine similarity** against all stored vectors
+4. Returns ranked results
+
+## �🛠️ Tools Usage
 
 ### From OpenClaw Agent
 
@@ -113,22 +162,34 @@ Once installed, your agent can use natural language commands:
 
 ### CLI Usage
 
-**Create a memory shard:**
+**Prerequisites**: Before sharing, you need a vector database file (.faiss, .lance, or .chroma). 
+
+If you don't have one yet, you can:
+- Use your agent's existing knowledge base
+- Create embeddings from text using [sentence-transformers](https://www.sbert.net/)
+- Export from ChromaDB, LanceDB, or FAISS
+
+**Example workflow - Create and share:**
+
 ```bash
+# 1. Create a memory shard from your vector database
 python3 client.py create-shard \
-  --source ./my_vector_db.faiss \
+  --source ./my_knowledge.faiss \
   --name "Kubernetes Migration Guide" \
   --tags "kubernetes,devops,migration" \
-  --model "claw-v3-small" \
-  --dimensions 1536
+  --model "nomic-embed-text-v1" \
+  --dimensions 768 \
+  --count 1000
+
+# 2. Generate signed magnet link (announces to tracker)
+python3 client.py generate-magnet \
+  --shard ./my_knowledge.faiss \
+  --sign  # Signs with your identity
+
+# Output: magnet:?xt=urn:btih:abc123...&dn=Kubernetes+Migration+Guide
 ```
 
-**Generate signed magnet link:**
-```bash
-python3 client.py generate-magnet \
-  --shard ./my_vector_db.faiss \
-  --sign  # Signs with your identity
-```
+**Share the magnet link** with other agents or post it to the network!
 
 **Search for shards:**
 ```bash
