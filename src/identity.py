@@ -24,6 +24,13 @@ except ImportError:
     OQS_AVAILABLE = False
     print("Warning: liboqs-python not available. Install with: pip install liboqs-python")
 
+try:
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from cryptography.hazmat.primitives import serialization
+    ED25519_AVAILABLE = True
+except ImportError:
+    ED25519_AVAILABLE = False
+
 
 @dataclass
 class AgentIdentity:
@@ -71,6 +78,7 @@ class IdentityManager:
     """
     
     ALGORITHM = "ML-DSA-87"  # NIST standard, highest security level
+    FALLBACK_ALGORITHM = "Ed25519"  # Classical fallback for compatibility
     
     def __init__(self, identity_dir: Optional[Path] = None):
         """
@@ -89,12 +97,14 @@ class IdentityManager:
         self._private_key: Optional[bytes] = None
         self._public_key: Optional[bytes] = None
         self._signer: Optional[oqs.Signature] = None
+        self._ed25519_key: Optional[ed25519.Ed25519PrivateKey] = None
         self._identity: Optional[AgentIdentity] = None
+        self._algorithm: str = self.ALGORITHM
         
-        if not OQS_AVAILABLE:
+        if not OQS_AVAILABLE and not ED25519_AVAILABLE:
             raise RuntimeError(
-                "liboqs-python is required for PQ signatures. "
-                "Install with: pip install liboqs-python"
+                "Either liboqs-python or cryptography is required. "
+                "Install with: pip install liboqs-python cryptography"
             )
     
     def generate_identity(
@@ -164,6 +174,7 @@ class IdentityManager:
     def load_identity(self, name: str = "agent") -> AgentIdentity:
         """
         Load an existing identity from disk.
+        Supports both ML-DSA-87 (.key) and Ed25519 (.pem) formats.
         
         Args:
             name: Agent name
@@ -174,25 +185,72 @@ class IdentityManager:
         Raises:
             FileNotFoundError: If identity doesn't exist
         """
+        # Try ML-DSA-87 format first
         private_key_path = self.identity_dir / f"{name}_private.key"
         public_key_path = self.identity_dir / f"{name}_public.key"
         identity_path = self.identity_dir / f"{name}_identity.json"
         
+        # Fallback to Ed25519 PEM format
         if not identity_path.exists():
-            raise FileNotFoundError(
-                f"Identity not found at {identity_path}. "
-                f"Run setup_identity.sh or use generate_identity() first."
-            )
+            private_key_path = self.identity_dir / f"{name}_private.pem"
+            public_key_path = self.identity_dir / f"{name}_public.pem"
+            agent_id_path = self.identity_dir / "agent_id.txt"
+            algorithm_path = self.identity_dir / "algorithm.txt"
+            
+            if private_key_path.exists() and ED25519_AVAILABLE:
+                # Load Ed25519 identity
+                return self._load_ed25519_identity(name, private_key_path, public_key_path, agent_id_path, algorithm_path)
+            else:
+                raise FileNotFoundError(
+                    f"Identity not found at {identity_path}. "
+                    f"Run setup_identity.sh or use generate_identity() first."
+                )
         
-        # Load keys
+        # Load ML-DSA-87 keys
         self._private_key = private_key_path.read_bytes()
         self._public_key = public_key_path.read_bytes()
         
         # Initialize signer
-        self._signer = oqs.Signature(self.ALGORITHM, self._private_key)
+        if OQS_AVAILABLE:
+            self._signer = oqs.Signature(self.ALGORITHM, self._private_key)
         
         # Load identity metadata
         self._identity = AgentIdentity.from_json(identity_path.read_text())
+        self._algorithm = self._identity.algorithm
+        
+        return self._identity
+    
+    def _load_ed25519_identity(self, name: str, private_key_path: Path, public_key_path: Path, 
+                                 agent_id_path: Path, algorithm_path: Path) -> AgentIdentity:
+        """Load Ed25519 identity from old format."""
+        # Load Ed25519 keys
+        private_pem = private_key_path.read_bytes()
+        self._ed25519_key = serialization.load_pem_private_key(private_pem, password=None)
+        
+        public_pem = public_key_path.read_bytes()
+        public_key = serialization.load_pem_public_key(public_pem)
+        
+        # Get agent ID
+        if agent_id_path.exists():
+            agent_id = agent_id_path.read_text().strip()
+        else:
+            # Generate from public key
+            public_bytes = public_key.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )
+            agent_id = hashlib.sha256(public_bytes).hexdigest()[:16]
+        
+        # Create identity object
+        public_b64 = base64.b64encode(public_pem).decode('utf-8')
+        self._identity = AgentIdentity(
+            agent_id=agent_id,
+            algorithm=self.FALLBACK_ALGORITHM,
+            public_key=public_b64,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            metadata={"source": "legacy_ed25519"}
+        )
+        self._algorithm = self.FALLBACK_ALGORITHM
         
         return self._identity
     
@@ -209,11 +267,16 @@ class IdentityManager:
         Raises:
             RuntimeError: If no identity is loaded
         """
-        if self._signer is None:
+        if self._algorithm == self.FALLBACK_ALGORITHM and self._ed25519_key:
+            # Use Ed25519 signing
+            signature = self._ed25519_key.sign(message)
+            return base64.b64encode(signature).decode('utf-8')
+        elif self._signer is not None:
+            # Use ML-DSA-87 signing
+            signature = self._signer.sign(message)
+            return base64.b64encode(signature).decode('utf-8')
+        else:
             raise RuntimeError("No identity loaded. Call load_identity() first.")
-        
-        signature = self._signer.sign(message)
-        return base64.b64encode(signature).decode('utf-8')
     
     def sign_json(self, data: Dict) -> str:
         """
