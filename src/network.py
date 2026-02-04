@@ -15,7 +15,7 @@ from typing import List, Optional, Dict, Callable, Any
 from datetime import datetime, timedelta
 import time
 
-from core import MemoryShard, MoltMagnet, DEFAULT_TRACKERS
+from .core import MemoryShard, MoltMagnet, DEFAULT_TRACKERS
 
 
 logger = logging.getLogger(__name__)

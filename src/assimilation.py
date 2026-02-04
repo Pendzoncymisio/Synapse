@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 import json
 
-from core import MemoryShard
+from .core import MemoryShard
 
 
 logger = logging.getLogger(__name__)

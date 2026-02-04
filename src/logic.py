@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Main entry point for the Synapse Protocol OpenClaw skill.
+Main logic for the Synapse Protocol OpenClaw skill.
 
-This script handles all tool invocations from the OpenClaw agent.
+Contains all command implementations and business logic.
 """
 
 import argparse
@@ -12,12 +12,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-# Add current directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from core import MemoryShard, MoltMagnet, create_shard_from_file, DEFAULT_TRACKERS
-from network import SynapseNode
-from assimilation import AssimilationEngine
+from .core import MemoryShard, MoltMagnet, create_shard_from_file, DEFAULT_TRACKERS
+from .network import SynapseNode
+from .assimilation import AssimilationEngine
+from . import setup_identity
 
 
 # Configure logging
@@ -121,116 +119,35 @@ def cmd_generate_magnet(args):
 
 
 def cmd_search(args):
-    """Search the P2P network for memory shards with trust ranking."""
+    """Search the P2P network for memory shards."""
     try:
-        import requests
-        from embeddings import create_embedder
-        from trust_rank import ClientTrustRank
+        # In a real implementation, this would query trackers and DHT
+        # For now, return a simulated response
         
-        # Get tracker URL
-        tracker_url = args.tracker if hasattr(args, 'tracker') and args.tracker else "http://hivebraintracker.com:8080"
-        
-        # Generate embedding from query text (transparent to agent)
-        logger.info(f"Generating embedding for query: {args.query}")
-        embedder = create_embedder(use_onnx=False)  # nomic-bert doesn't support auto ONNX export
-        query_embedding = embedder.encode(args.query).tolist()
-        
-        # Send embedding to tracker
-        logger.info(f"Searching tracker at {tracker_url}")
-        response = requests.post(
-            f"{tracker_url}/api/search/embedding",
-            json={
-                "embedding": query_embedding,
-                "limit": args.limit * 2  # Get more results for re-ranking
-            },
-            timeout=10
-        )
-        
-        if response.status_code != 200:
-            output_error(f"Tracker error: {response.text}")
-        
-        data = response.json()
-        
-        if data.get("status") != "success":
-            output_error(f"Search failed: {data.get('error', 'Unknown error')}")
-        
-        results = data.get("results", [])
-        
-        # Apply trust ranking if enabled
-        if not args.no_trust:
-            logger.info("Computing trust scores...")
-            trust_engine = ClientTrustRank()
-            results = trust_engine.rank_search_results(
-                results,
-                tracker_url,
-                similarity_weight=0.6,
-                trust_weight=0.4
-            )
-            
-            # Warn about malicious seeders
-            for result in results:
-                if result.get("trust_rank", 0) < -0.5:
-                    result["warning"] = "⚠️  LOW TRUST - Multiple negative reports"
-                elif result.get("trust_rank", 0) < 0:
-                    result["warning"] = "⚠️  SUSPICIOUS - Check seeder reputation"
-        
-        # Limit to requested count
-        results = results[:args.limit]
+        results = [
+            {
+                "display_name": f"Sample Result {i+1} for '{args.query}'",
+                "info_hash": f"{'a' * 40}",  # Placeholder hash
+                "tags": ["sample", args.query.lower().replace(" ", "-")],
+                "model": args.model or "claw-v3-small",
+                "dimension_size": 1536,
+                "file_size": 10485760,  # 10MB
+                "seeders": 5,
+                "leechers": 2,
+            }
+            for i in range(min(args.limit, 3))  # Limit to 3 for simulation
+        ]
         
         output_json({
             "status": "success",
             "query": args.query,
             "results": results,
             "count": len(results),
-            "trust_enabled": not args.no_trust,
-            "message": f"Found {len(results)} results"
+            "message": f"Found {len(results)} results (simulated)"
         })
     
-    except ImportError as e:
-        logger.exception("Missing dependency")
-        output_error(f"Missing required module: {e}. Install with: pip install requests sentence-transformers")
-    except requests.exceptions.RequestException as e:
-        logger.exception("Failed to connect to tracker")
-        output_error(f"Tracker connection failed: {e}")
     except Exception as e:
         logger.exception("Failed to search")
-        output_error(str(e))
-
-
-def cmd_setup_identity(args):
-    """Generate ML-DSA-87 identity for Synapse Protocol."""
-    try:
-        import sys
-        import subprocess
-        from pathlib import Path
-        
-        # Path to setup script
-        setup_script = Path(__file__).parent.parent / "setup_identity.py"
-        
-        if not setup_script.exists():
-            output_error(f"Setup script not found: {setup_script}")
-        
-        # Build command
-        cmd = [sys.executable, str(setup_script)]
-        if args.identity_dir:
-            cmd.extend(["--identity-dir", args.identity_dir])
-        if args.force:
-            cmd.append("--force")
-        
-        # Run setup script
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            output_json({
-                "status": "success",
-                "message": "Identity generated successfully",
-                "output": result.stdout
-            })
-        else:
-            output_error(f"Identity generation failed: {result.stderr}")
-    
-    except Exception as e:
-        logger.exception("Failed to setup identity")
         output_error(str(e))
 
 
@@ -346,6 +263,43 @@ def cmd_list_seeds(args):
         output_error(str(e))
 
 
+def cmd_setup_identity(args):
+    """Generate ML-DSA-87 identity for Synapse Protocol."""
+    try:
+        import sys
+        import subprocess
+        from pathlib import Path
+        
+        # Path to setup script
+        setup_script = Path(__file__).parent / "setup_identity.py"
+        
+        if not setup_script.exists():
+            output_error(f"Setup script not found: {setup_script}")
+        
+        # Build command
+        cmd = [sys.executable, str(setup_script)]
+        if args.identity_dir:
+            cmd.extend(["--identity-dir", args.identity_dir])
+        if args.force:
+            cmd.append("--force")
+        
+        # Run setup script
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            output_json({
+                "status": "success",
+                "message": "Identity generated successfully",
+                "output": result.stdout
+            })
+        else:
+            output_error(f"Identity generation failed: {result.stderr}")
+    
+    except Exception as e:
+        logger.exception("Failed to setup identity")
+        output_error(str(e))
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -373,8 +327,6 @@ def main():
     search_parser.add_argument("--query", required=True, help="Search query")
     search_parser.add_argument("--limit", type=int, default=10, help="Max results")
     search_parser.add_argument("--model", help="Filter by model")
-    search_parser.add_argument("--tracker", default="http://hivebraintracker.com:8080", help="Tracker URL")
-    search_parser.add_argument("--no-trust", action="store_true", help="Disable trust ranking")
     
     # download command
     download_parser = subparsers.add_parser("download", help="Download a memory shard")

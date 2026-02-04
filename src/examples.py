@@ -11,10 +11,10 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core import MemoryShard, MoltMagnet, create_shard_from_file, DEFAULT_TRACKERS
-from network import SynapseNode
-from assimilation import AssimilationEngine
-from config import SynapseConfig, load_config
+from .core import MemoryShard, MoltMagnet, create_shard_from_file, DEFAULT_TRACKERS
+from .network import SynapseNode
+from .assimilation import AssimilationEngine
+from .config import SynapseConfig, load_config
 
 
 def example_create_and_share_shard():

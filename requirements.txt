@@ -10,7 +10,7 @@ optimum[onnxruntime]>=1.16.0
 onnxruntime>=1.16.0
 
 # Post-Quantum Cryptography (ML-DSA-87)
-pyoqs>=0.10.1  # Python wrapper for liboqs
+oqs>=0.10.1  # Python wrapper for liboqs
 
 # Data validation
 dataclasses-json>=0.6.0
