@@ -352,7 +352,7 @@ def cmd_share(args):
             embedding_list = embedding_vector.tolist()
             
             # Register with tracker
-            tracker_url = "http://hivebraintracker.com:8080"
+            tracker_url = args.trackers.split(',')[0].replace('/announce', '') if args.trackers else "http://hivebraintracker.com:8080"
             register_data = {
                 "info_hash": info_hash,
                 "display_name": shard.display_name,
