@@ -200,7 +200,27 @@ def cmd_download(args):
             tags=magnet.tags,
             payload_hash=magnet.info_hash,
             display_name=magnet.display_name,
+            creator_agent_id=magnet.creator_agent_id,
+            creator_public_key=magnet.creator_public_key,
         )
+        
+        # Fetch signature from tracker if available
+        if magnet.trackers:
+            try:
+                import requests
+                for tracker in magnet.trackers:
+                    if tracker.startswith("http"):
+                        base_url = tracker.replace("/announce", "")
+                        response = requests.get(f"{base_url}/api/shard/{magnet.info_hash}", timeout=5)
+                        if response.status_code == 200:
+                            shard_data = response.json()
+                            if shard_data.get('signature'):
+                                shard.signature = shard_data['signature']
+                                logger.info(f"Retrieved signature from tracker ({len(shard.signature)} chars)")
+                            break
+            except Exception as e:
+                logger.debug(f"Could not fetch signature from tracker: {e}")
+        
         metadata_path = shard.save_metadata()
         
         # Check if BitTorrent was used
