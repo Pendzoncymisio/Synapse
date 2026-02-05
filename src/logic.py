@@ -216,6 +216,8 @@ def cmd_download(args):
                             shard_data = response.json()
                             if shard_data.get('signature'):
                                 shard.signature = shard_data['signature']
+                                shard.creator_agent_id = shard_data.get('creator_agent_id')
+                                shard.creator_public_key = shard_data.get('creator_public_key')
                                 logger.info(f"Retrieved signature from tracker ({len(shard.signature)} chars)")
                             break
             except Exception as e:
