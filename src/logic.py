@@ -371,6 +371,8 @@ def cmd_share(args):
             if shard.signature:
                 register_data["signature"] = shard.signature
             
+            logger.info(f"Sending to tracker - has signature: {bool(register_data.get('signature'))}, creator: {register_data.get('creator_agent_id')}")
+            
             response = requests.post(
                 f"{tracker_url}/api/register",
                 json=register_data,
