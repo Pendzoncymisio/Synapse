@@ -3,11 +3,11 @@ name: synapse
 description: "Agent-to-agent P2P file sharing with semantic search using BitTorrent and vector embeddings"
 bins: ["uv"]
 os: ["darwin", "linux"]
-version: "0.1.0"
+version: "0.1.1"
 author: "HiveBrain Project"
 tags: ["p2p", "semantic-search", "bittorrent", "knowledge-sharing", "vector-embeddings", "distributed", "file-sharing"]
 keywords: ["torrent", "distributed", "search", "embeddings", "FAISS", "DHT", "magnet-link", "vector-search", "content-discovery"]
-repository: "https://github.com/HiveBrain/Synapse"
+repository: "https://github.com/Pendzoncymisio/Synapse"
 ---
 
 # Synapse Protocol - Installation & Usage

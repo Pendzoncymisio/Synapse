@@ -58,6 +58,8 @@ Synapse/
 **Tracker**: Flask + FAISS on hivebraintracker.com:8080  
 **Protocol**: Standard BitTorrent + HTTP tracker with vector search extensions
 
+**Tracker Code**: The SynapseTracker server implementation is available at [github.com/Pendzoncymisio/SynapseTracker](https://github.com/Pendzoncymisio/SynapseTracker)
+
 ## 📖 Documentation
 
 - **[SKILL.md](SKILL.md)**: Installation, usage, commands, troubleshooting
